@@ -20,22 +20,30 @@ def process_html():
     for tag in soup(["script", "style", "svg", "path", "img", "nav", "footer", "header", "aside", "sidebar", "button"]):
         tag.decompose()
 
-    structured_data = {}
-    current_heading = "General"
-    structured_data[current_heading] = []  # Initialize 'General' heading
+    structured_data = {"General": []}
+    processed_elements = set()  # Track processed elements
 
     for element in soup.find_all(True):
-        if element.name in ['h1', 'h2', 'h3']:
-            current_heading = element.get_text(strip=True)
-            structured_data[current_heading] = []  # Initialize new heading
-        elif element.name in ['p', 'div', 'section']:
-            text = element.get_text(" ", strip=True)
-            if text and text not in structured_data[current_heading]:
-                structured_data[current_heading].append(text)
+        if element in processed_elements:
+            continue  # Skip already processed elements
 
-    # Remove empty sections and the 'General' section if it's empty
-    unwanted_titles = [""]  # Add any other unwanted titles here
-    structured_data = {k: v for k, v in structured_data.items() if v and k not in unwanted_titles}
+        if element.name in ['p', 'div', 'section']:
+            text = element.get_text(" ", strip=True)
+            if text:
+                structured_data["General"].append(text)
+                processed_elements.update(element.find_all(True))  # Mark child elements as processed
+
+    # Clean and filter text in "General"
+    cleaned_text = []
+    for text in structured_data["General"]:
+        if text not in cleaned_text:  # Avoid duplication
+            cleaned_text.append(text)
+
+    structured_data["General"] = ' '.join(cleaned_text)
+
+
+    # Debug print to check how the data is structured
+    # print(structured_data)
     # Summarize the content of each section
     # summarized_data = {}
     # loop = asyncio.new_event_loop()
