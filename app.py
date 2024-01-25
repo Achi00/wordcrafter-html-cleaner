@@ -10,15 +10,31 @@ import spacy
 
 # Initialize Spacy and OpenAI clients
 nlp = spacy.load("en_core_web_sm")
-client = AsyncOpenAI(api_key="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")
+client = AsyncOpenAI(api_key="")
 
 # Initialize Flask app
 app = Flask(__name__)
 
 
+# Can you provide a summary of the key concepts from this documentation? I'm also looking for practical examples, best practices, and any notable insights or advanced tips that can be derived from it.
+def generate_gpt_message(topic, text):
+    if topic == "coding":
+        return f"Explain the following code in simple terms: {text}"
+    elif topic == "documentation":
+        return [
+        {'role': 'system', 'content': "You are about to read a documentation section. Analyze and understand its content thoroughly. Provide a summary and highlight key points, concepts, and any necessary details for a user to understand it effectively."},
+        {'role': 'system', 'content': "Here is the documentation: {text}."},
+        {'role': 'assistant', 'content': "Provide a summary of the documentation here, focusing on key points, essential concepts, necessary details and examples."},
+        {'role': 'user', 'content': "Based on the documentation, what are the main steps or procedures one should follow when using this software? What are the best practices and common pitfalls to be aware of? What are the best practices and examples? what are common mistakes?"},
+    ]
+    elif topic == "news":
+        return f"Provide a brief summary of this news article: {text}"
+    # Add more conditions for other topics
+    else:
+        return f"Provide an overview of the following text: {text}"
+
 # Route to process HTML content
-@app.route('/process', methods=['POST'])
-def process_html():
+async def process_html():
     data = request.json
     html_content = data['html']
     soup = BeautifulSoup(html_content, 'html.parser')
@@ -43,18 +59,17 @@ def process_html():
     refined_text = remove_duplicate_sentences(combined_text)
     structured_data["General"] = refined_text
 
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    summarized_data = loop.run_until_complete(get_openai_summary(structured_data))
-    loop.close()
+    # Asynchronously get the topic and summary
+    topic = await get_openai_topics(refined_text)
+    summarized_data = await get_openai_summary(structured_data)
 
     response = {
         'structured_data': structured_data,
-        'summarized_data': summarized_data
+        'summarized_data': summarized_data,
+        'topic': topic
     }
 
     return jsonify(response)
-
 # Async function to summarize with AI
 async def get_openai_summary(structured_data):
     summarized_data = {}
@@ -73,22 +88,21 @@ async def get_openai_summary(structured_data):
     return summarized_data
 
 # Async function to define topics with AI
-async def get_openai_topics(structured_data):
-    # Truncate the text to approximately 1000 tokens
-    topics_data = ' '.join(text.split()[:750])
-    for heading, text in structured_data.items():
-        chat_completion = await client.chat.completions.create(
-            messages=[
-                {"role": "system", "content": "You are a helpful assistant. your have to define topic based on provided content in only one word, topic will be documentation, news, code, education"},
-                {"role": "user", "content": f"define topic based on provided content, {text}"}
-            ],
-            model="gpt-3.5-turbo-1106",
-            max_tokens=200
-        )
-        topics = chat_completion.choices[0].message.content
-        topics_data[heading] = topics
+# Async function to define topics with AI
+async def get_openai_topics(text):
+    truncated_text = ' '.join(text.split()[:750])  # Truncate to approx. 1000 tokens
 
-    return topics_data
+    chat_completion = await client.chat.completions.create(
+        messages=[
+            {"role": "system", "content": "You are a helpful assistant. Your task is to define the topic based on provided content in only one word. Topics include documentation, news, code, education."},
+            {"role": "user", "content": f"Define the topic, topics are documentation, news, education, based on this content in: {truncated_text}"}
+        ],
+        model="gpt-3.5-turbo-1106",
+        max_tokens=200
+    )
+    topic = chat_completion.choices[0].message.content.strip()
+    return topic
+
 
 # Function to remove duplicate sentences
 def remove_duplicate_sentences(text):
@@ -119,7 +133,7 @@ def split_and_optimize_text(text, max_chunk_size=1000):
 
     return optimized_text
 
-
+app.add_url_rule('/process', view_func=process_html, methods=['POST'])
 
 if __name__ == '__main__':
     app.run(debug=True)
